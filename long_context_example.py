@@ -29,23 +29,32 @@ enc = AutoTokenizer.from_pretrained(
     use_fast=False, 
     trust_remote_code=True, 
     tokenizer_type='llama')
-
+print(model)
 model.eval()
 file_name = "passkey_examples.jsonl"
 method_name = f"K{config.k_bits}V{config.v_bits} KiVi"
-print("=========="*2 + f"**{method_name}**" + "=========="*2)
-for line in open(file_name, "r"):
-    example = json.loads(line)
-    prompt_postfix = "What is the pass key? The pass key is "
-    prompt = example["input"] + prompt_postfix
-    input_ids = enc(prompt, return_tensors="pt").input_ids.cuda()
-    print( "-----------------------------------" )
-    print( f"#Tokens of Prompt:", input_ids.shape[1], end=" " )
-    print( "Passkey target:", example["target"] )
 
-    tokens = model.generate(input_ids, max_new_tokens=len(example["target"]))
-    answer = prompt_postfix + enc.decode(tokens[0].tolist()[input_ids.shape[1]:], skip_special_tokens=True)
-    answer = answer.replace("\n", "\\n")
-    answer= f"{method_name}:\n     [ {answer} ]"
-    print( answer )
-    print( "-----------------------------------\n" )
+# PROFILE GENERATION
+from torch.profiler import profile, ProfilerActivity
+with profile(activities=[ProfilerActivity.CPU,
+                         ProfilerActivity.CUDA],
+                         profile_memory=True,
+                         with_stack=True) as prof:
+    print("=========="*2 + f"**{method_name}**" + "=========="*2)
+    for line in open(file_name, "r"):
+        example = json.loads(line)
+        prompt_postfix = "What is the pass key? The pass key is "
+        prompt = example["input"] + prompt_postfix
+        input_ids = enc(prompt, return_tensors="pt").input_ids.cuda()
+        print( "-----------------------------------" )
+        print( f"#Tokens of Prompt:", input_ids.shape[1], end=" " )
+        print( "Passkey target:", example["target"] )
+
+        tokens = model.generate(input_ids, max_new_tokens=len(example["target"]))
+        answer = prompt_postfix + enc.decode(tokens[0].tolist()[input_ids.shape[1]:], skip_special_tokens=True)
+        answer = answer.replace("\n", "\\n")
+        answer= f"{method_name}:\n     [ {answer} ]"
+        print( answer )
+        print( "-----------------------------------\n" )
+prof.export_chrome_trace("trace_long_context.json")
+print(f"Sort by cuda time:\n{prof.key_averages(group_by_stack_n=5).table(sort_by='cuda_time_total')}\n\n")
